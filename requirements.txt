@@ -1,0 +1,12 @@
+# Exact versions, tested together on Python 3.12. Use Python 3.12 locally AND on Streamlit Cloud
+# (Advanced settings > Python version). Same versions everywhere = the saved week model always loads.
+pandas==2.3.3
+numpy==2.5.4
+pyarrow==26.0.1
+scipy==1.18.1
+scikit-learn==1.9.1
+joblib==1.6.0
+streamlit==1.67.0
+plotly==6.9.0
+gridstatus==0.37.0
+pytest==9.2.0
