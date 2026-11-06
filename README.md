@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # GridFlex AI
 Vibathon 2026, UCLA Anderson MSBA, Theme 03 "Time to power". **Read `CONTEXT.md` first.**
 
@@ -24,3 +25,6 @@ There is no fake data. `data/` and `out/` start empty and fill as each builder's
     tests/                contract, interface, app-boot and acceptance (A1-A10) tests
     mockups/              what the final app should look like
     docs/                 PDF spec, submission doc template, team message
+=======
+# gridflex-ai
+>>>>>>> f048ae51abc84c2b9c614a0971f4a91c6997efb5
