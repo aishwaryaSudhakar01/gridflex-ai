@@ -91,11 +91,39 @@ def live_week_plan(p_items, mode):
     return week_plan.plan_week(load("grid_hourly"), dict(p_items), mode)
 
 
+@st.cache_data
+def live_week_limit(p_items, t0, t1):
+    """Grid limit for the facility in the peak week (contracts.grid_limit on the real load)."""
+    g = load("grid_hourly")
+    g = g[(g.ts_utc >= t0) & (g.ts_utc <= t1)]
+    if g.empty:
+        return None
+    return pd.DataFrame({"ts_utc": g.ts_utc.values,
+                         "limit_mw": c.grid_limit(g.load_mw.to_numpy(dtype=float), dict(p_items), peak())}).assign(
+        ts_utc=lambda d: pd.to_datetime(d.ts_utc, utc=True))
+
+
 def local(ts):
     return ts.dt.tz_convert(c.TZ_LOCAL)
 
 
 # ---------------------------------------------------------------- sidebar (built from contracts.SLIDERS)
+LABELS = {
+    "it_mw": "IT load (MW)", "pue": "PUE", "share_realtime": "Real-time inference share",
+    "share_batch": "Batch + fine-tuning share", "battery_mw": "Battery power (MW)", "battery_h": "Battery hours",
+    "backup_mw": "Backup generation (MW)", "promise_mw": "Flex promised (MW)", "reliability_target": "Reliability target",
+    "value_compute_usd_mwh": "Value of compute ($/MWh)", "battery_wear_usd_mwh": "Battery wear ($/MWh)",
+    "battery_capex_usd_kwyr": "Battery cost ($/kW-yr)", "backup_fuel_usd_mwh": "Backup fuel ($/MWh)",
+    "carbon_price_usd_t": "Carbon price ($/t)", "capacity_cost_usd_kwyr": "Grid capacity cost ($/kW-yr)",
+    "wait_firm_months": "Wait for firm connection (months)", "wait_flex_months": "Wait for flexible connection (months)",
+}
+
+
+def slider(k):
+    lo, hi, step = c.SLIDERS[k]
+    st.slider(LABELS.get(k, k), lo, hi, step=step, key=k)
+
+
 for k, v in c.DEFAULTS.items():
     st.session_state.setdefault(k, v)
 
@@ -103,18 +131,15 @@ with st.sidebar:
     st.header("Data center")
     st.selectbox("Region", ["ERCOT (Texas)"], disabled=True)
     for k in ["it_mw", "pue", "share_realtime", "share_batch", "battery_mw", "battery_h", "backup_mw"]:
-        lo, hi, step = c.SLIDERS[k]
-        st.slider(k, lo, hi, step=step, key=k)
+        slider(k)
     st.caption(f"Training share: {c.training_share(st.session_state):.0%}")
     st.header("Promise")
     for k in ["promise_mw", "reliability_target"]:
-        lo, hi, step = c.SLIDERS[k]
-        st.slider(k, lo, hi, step=step, key=k)
-    with st.expander("Costs and impact"):
+        slider(k)
+    with st.expander("Costs and impact (8 sliders)"):
         for k in ["value_compute_usd_mwh", "battery_wear_usd_mwh", "battery_capex_usd_kwyr", "backup_fuel_usd_mwh",
                   "carbon_price_usd_t", "capacity_cost_usd_kwyr", "wait_firm_months", "wait_flex_months"]:
-            lo, hi, step = c.SLIDERS[k]
-            st.slider(k, lo, hi, step=step, key=k)
+            slider(k)
     if st.button("Reset to defaults"):
         for k, v in c.DEFAULTS.items():
             st.session_state[k] = v
@@ -159,12 +184,13 @@ def right_now():
     now = live_now(P_ITEMS)
     when = now["as_of_utc"].tz_convert(c.TZ_LOCAL).strftime("%b %d, %I %p CT")
     label = "Live from ERCOT" if now["source"] == "live" else "Last saved hour (live feed not connected or unavailable)"
-    st.subheader(f"Right now: {when}")
+    status = {"normal": "🟢 Normal", "watch": "🟡 Watch", "tight": "🔴 Tight"}.get(now["status"], now["status"])
+    st.subheader(f"Right now: {when}  ·  {status}")
     st.caption(label + ". The data center is modelled from the sidebar; no real site publishes its usage.")
     r1, r2, r3, r4 = st.columns(4)
     r1.metric("ERCOT load this hour", f"{now['load_mw']:,.0f} MW")
     r2.metric("Today's forecast peak", f"{now['forecast_peak_today_mw']:,.0f} MW")
-    r3.metric("Room below the 2022-2024 record", f"{now['room_to_peak_mw']:,.0f} MW")
+    r3.metric("Room below the record", f"{now['room_to_peak_mw']:,.0f} MW")
     if now["required_cut_mw"] > 0:
         srcs = ", ".join(f"{k} {v:,.0f} MW" for k, v in now["cut_by_source_mw"].items() if v > 0 and k != "shortfall")
         r4.metric("Our data center", f"Cutting {now['required_cut_mw']:,.0f} MW", help=srcs)
@@ -176,7 +202,7 @@ def right_now():
     fig.add_scatter(x=local(td.ts_utc), y=td.load_mw, name="Load so far", line=dict(width=2))
     fig.add_scatter(x=local(td.ts_utc), y=td.forecast_mw, name="ERCOT forecast", line=dict(dash="dot"))
     fig.add_hline(y=now["planning_peak_mw"] - now["facility_mw"], line_dash="dash", line_color="red",
-                  annotation_text="Cut starts here (2022-2024 record minus our data center)")
+                  annotation_text="Cut starts here (record load minus our data center)")
     fig.update_layout(height=220, margin=dict(t=10, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
@@ -193,7 +219,7 @@ def plan_the_week():
     days = list(dict.fromkeys(wp.local_ts.dt.date))
     d1, d2 = st.columns([2, 3])
     day = d1.selectbox("Day", days, format_func=lambda d: d.strftime("%a %b %d"), key="week_day")
-    hour = d2.slider("Hour (Texas time)", 0, 23, 17, key="week_hour")
+    hour = d2.slider("Hour (Central)", 0, 23, 17, key="week_hour")
     sel = wp[(wp.local_ts.dt.date == day) & (wp.local_ts.dt.hour == hour)]
     if sel.empty:
         st.warning("No forecast for that hour.")
@@ -224,6 +250,7 @@ def plan_the_week():
         fig.add_vline(x=sel.local_ts.iloc[0], line_color="black", opacity=0.4)
     fig.update_layout(title="Load forecast for the week", height=300, margin=dict(t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Our model vs ERCOT's. Above the red line, the data center must cut. Black line: your selected hour.")
     fig = go.Figure()
     for col, name in [("cut_batch_mw", "Batch paused"), ("cut_battery_mw", "Battery"), ("cut_backup_mw", "Backup"),
                       ("cut_training_mw", "Training slowed")]:
@@ -232,6 +259,7 @@ def plan_the_week():
     fig.update_layout(barmode="stack", title="Where each MW of cut comes from, hour by hour", height=280,
                       margin=dict(t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("The model's selection: cheapest source first, real-time AI never touched.")
 
 
 with t0:
@@ -248,6 +276,7 @@ def tab_grid():
     fig.update_layout(title="New load the grid can host vs energy it must curtail", xaxis_title="New load (MW)",
                       yaxis_title="% of its energy curtailed", height=380)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("2022 to 2024 ERCOT history. Dashed line: Duke's 0.5% benchmark.")
     ask = live_ask(P_ITEMS)
     a1, a2, a3, a4 = st.columns(4)
     a1.metric("Events per year", f"{ask['events_per_year']:.0f}")
@@ -256,7 +285,20 @@ def tab_grid():
     a4.metric("Cut the grid asks for", f"{ask['k_ask_mw']:,.0f} MW",
               help=f"Covers {p['reliability_target']:.0%} of tight periods. In the single worst hour the whole site "
                    f"({ask['worst_hour_cut_mw']:,.0f} MW) must drop, because load sat exactly at the record.")
-    # TODO C: required-cut histogram for this data center (PDF Tab 1).
+    g = load("grid_hourly")
+    yrs = g.ts_utc.dt.tz_convert(c.TZ_LOCAL).dt.year
+    g = g[(yrs >= c.PEAK_YEARS[0]) & (yrs <= c.PEAK_YEARS[1]) & ~g.excluded]
+    F_mw = c.facility_mw(p)
+    cut = pd.Series(c.required_cut(g.load_mw.to_numpy(dtype=float), F_mw, peak()))
+    cut = cut[cut > 0]
+    if cut.empty:
+        st.info("At this size the data center never has to cut in 2022 to 2024.")
+    else:
+        fig = go.Figure(go.Histogram(x=cut, nbinsx=24))
+        fig.update_layout(title="Hours this data center must cut, by size of cut", xaxis_title="Cut needed (MW)",
+                          yaxis_title="Hours (2022 to 2024)", height=300, margin=dict(t=40, b=10))
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption(f"How often the grid asks for 0 to {F_mw:,.0f} MW.")
 
 
 with t1:
@@ -273,18 +315,29 @@ def tab_forecast():
     fig.add_scatter(x=local(fc.ts_utc), y=fc.actual_mw, name="Actual", line=dict(width=1))
     fig.add_scatter(x=local(fc.ts_utc), y=fc.model_mw, name="Our forecast", line=dict(width=1))
     fig.add_scatter(x=local(fc.ts_utc), y=fc.ba_forecast_mw, name="ERCOT forecast", line=dict(width=1, dash="dot"))
-    fig.add_hline(y=peak() - c.facility_mw(c.DEFAULTS), line_dash="dash", annotation_text="Stress line (default design)")
+    fig.add_hline(y=peak() - c.facility_mw(c.DEFAULTS), line_dash="dash", annotation_text="Stress line (P − F)")
+    flagged = fc[fc.stress_flag]
+    if not flagged.empty:
+        fig.add_scatter(x=local(flagged.ts_utc), y=flagged.actual_mw, mode="markers", name="Flagged as stress",
+                        marker=dict(color="orange", size=5))
     for d in c.CP4_2025:
-        fig.add_vline(x=d, line_color="red", opacity=0.3)
-    fig.update_layout(title="Summer 2025, forecast a day ahead (red lines: 4CP peak days)", height=380)
+        nxt = (pd.Timestamp(d) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+        fig.add_vrect(x0=d, x1=nxt, fillcolor="red", opacity=0.12, line_width=0)
+    fig.update_layout(title="Summer 2025, forecast a day ahead", height=380)
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("Stress hours and the line are for the default 1,000 MW design the forecast was scored on; "
-               "sidebar changes don't move them.")
-    s1, s2, s3, s4 = st.columns(4)
-    s1.metric("Recall on stress hours", f"{met['recall']:.0%}")
-    s2.metric("Precision", f"{met['precision']:.0%}")
-    s3.metric("MAPE: ours / ERCOT / naive", f"{met['mape_model']:.1f} / {met['mape_ba']:.1f} / {met['mape_naive']:.1f}")
-    s4.metric("4CP days caught", f"{met['cp4_days_caught']} of {met['cp4_days_total']}")
+    st.caption("Red bands: the four 4CP system-peak days. Orange dots: hours we flagged as stress. The stress line is "
+               "for the default 1,000 MW design the forecast was scored on; sidebar changes don't move it.")
+    st.markdown("**Scorecard, held-out summer 2025**")
+    pct = lambda v: f"{v:.1f}%"
+    card = pd.DataFrame({
+        "": ["MAPE, all hours", "MAPE, top 5% hours", "Stress hours caught (recall)", "Flags that were real (precision)",
+             "4CP days flagged a day ahead"],
+        "Ours": [pct(met["mape_model"]), pct(met["mape_top5_model"]), f"{met['recall']:.0%}", f"{met['precision']:.0%}",
+                 f"{met['cp4_days_caught']} of {met['cp4_days_total']}"],
+        "ERCOT": [pct(met["mape_ba"]), pct(met["mape_top5_ba"]), "n/a", "n/a", "n/a"],
+        "Same hour last week": [pct(met["mape_naive"]), pct(met["mape_top5_naive"]), "n/a", "n/a", "n/a"],
+    })
+    st.dataframe(card, hide_index=True, use_container_width=True)
 
 
 with t2:
@@ -305,24 +358,35 @@ def tab_operation():
     fig.add_bar(x=local(week.ts_utc), y=-week.batt_mw, name="Battery (charge +, discharge -)")
     fig.add_bar(x=local(week.ts_utc), y=-week.backup_mw, name="Backup")
     fig.add_scatter(x=local(week.ts_utc), y=week.dc_draw_mw, name="Grid draw", line=dict(color="black"))
-    fig.update_layout(barmode="relative", title="Peak week: workloads under the grid limit", height=400)
+    wl = live_week_limit(P_ITEMS, week.ts_utc.min(), week.ts_utc.max())
+    if wl is not None:
+        fig.add_scatter(x=local(wl.ts_utc), y=wl.limit_mw, name="Grid limit", line=dict(color="red", dash="dash"))
+    fig.update_layout(barmode="relative", title="Peak week: how the data center runs under the grid's limit",
+                      height=400)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Stacked MW at the meter. Real-time inference never moves; batch pauses first, battery and backup cover "
+               "the peak, training slows only at the top.")
     fig = go.Figure()
     for case in ["rigid", "flexible"]:
         d = test[test.case == case]
         fig.add_scatter(x=local(d.ts_utc), y=d.grid_total_mw, name=f"ERCOT load, {case} data center", line=dict(width=1))
     fig.add_hline(y=peak(), line_dash="dash", annotation_text="Planning peak (2022-2024 record)")
-    fig.update_layout(title="Total grid load, rigid vs flexible", height=340)
+    fig.update_layout(title="ERCOT load with a rigid vs flexible data center", height=340)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Rigid crosses the planning peak; flexible should not.")
     ev = load("events")
     evf = ev[(ev.case == "flexible") & (ev.split == "test")]
     fig = go.Figure(go.Bar(x=evf.event_id, y=evf.delivered_mw, name="Delivered"))
     fig.add_hline(y=p["promise_mw"], line_dash="dash", annotation_text="Promise")
     fig.update_layout(title="Delivered MW per real event vs the promise", height=300)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Each bar is one 2025 event.")
     rel = load("reliability")
+    rt_full = c.DEFAULTS["it_mw"] * c.DEFAULTS["share_realtime"]          # replay uses the built design
+    rt_ok = (flex.realtime_mw >= rt_full - 1e-3).mean() if len(flex) else float("nan")
     st.info(f"Reliable flex: {rel['k_rel_mw']:,.0f} MW in {p['reliability_target']:.0%} of events. "
-            f"Promise {p['promise_mw']:,.0f} MW {'holds' if rel['k_rel_mw'] >= p['promise_mw'] else 'does NOT hold'}.")
+            f"Promise of {p['promise_mw']:,.0f} MW {'holds' if rel['k_rel_mw'] >= p['promise_mw'] else 'does NOT hold'}. "
+            f"Real-time inference served in {rt_ok:.0%} of hours.")
 
 
 with t3:
@@ -336,6 +400,7 @@ def supply():
     fig = go.Figure(go.Bar(x=sc.source, y=sc.mw, text=[f"${v:,.0f}/MWh" for v in sc.cost_per_mwh]))
     fig.update_layout(title="Supply curve: MW of flex by source, cheapest first", height=340)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Cheap flex (batch, battery) runs out first; training is the most expensive.")
 
 
 def frontier():
@@ -350,6 +415,7 @@ def frontier():
     fig.update_layout(title="Design frontier: size vs compute lost", xaxis_title="Facility MW",
                       yaxis_title="Compute lost %", height=380)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Green: meets the reliability target with 0 hours over the limit. Star: cheapest design that does.")
 
 
 with t4:
@@ -361,15 +427,41 @@ with t4:
 def tab_impact():
     need("grid_hourly", "replay_hourly", "headroom", "reliability")
     imp = live_impact(P_ITEMS)
-    cols = st.columns(4)
-    for col, sec in zip(cols, ["grid", "data_center", "emissions", "ratepayers"]):
-        with col:
-            st.subheader(sec.replace("_", " ").title())
-            for k in c.IMPACT_KEYS[sec]:
-                st.write(f"**{k}**: rigid {imp[sec]['rigid'][k]:,.2f} | flexible {imp[sec]['flexible'][k]:,.2f}")
+    mw = lambda v: f"{v:,.0f} MW"
+    num = lambda v: f"{v:,.0f}"
+    usd = lambda v: f"${v / 1e6:,.0f}M / yr" if abs(v) >= 1e6 else f"${v:,.0f}"
+    rows = {
+        "Grid": [("Data center load at system peak", "dc_load_at_peak_mw", mw),
+                 ("Hours over planning peak", "hours_over_planning_peak", num),
+                 ("Firm capacity avoided", "firm_capacity_avoided_mw", mw),
+                 ("Value of capacity avoided", "firm_capacity_avoided_usd_yr", usd),
+                 ("Headroom unlocked", "headroom_unlocked_mw", mw)],
+        "Data center": [("Compute lost", "compute_lost_pct", lambda v: f"{v:.2f}%"),
+                        ("Compute deferred", "compute_deferred_mwh", lambda v: f"{v:,.0f} MWh"),
+                        ("Battery cycles", "battery_cycles", num),
+                        ("Backup hours", "backup_hours", num),
+                        ("Online sooner", "months_earlier_online", lambda v: f"{v:,.0f} months")],
+        "Emissions": [("Grid CO2", "co2_grid_t", lambda v: f"{v:,.0f} t"),
+                      ("Backup CO2", "co2_backup_t", lambda v: f"{v:,.0f} t"),
+                      ("Total CO2", "co2_total_t", lambda v: f"{v:,.0f} t")],
+        "Ratepayers": [("Avoided cost per MWh, all ERCOT load", "avoided_cost_usd_per_mwh", lambda v: f"${v:,.2f}"),
+                       ("Cut in 4CP hours (cost shifts to others)", "cp4_cut_mw", mw)],
+    }
+    key_of = {"Grid": "grid", "Data center": "data_center", "Emissions": "emissions", "Ratepayers": "ratepayers"}
+    cols = st.columns(2)
+    for i, (title, items) in enumerate(rows.items()):
+        sec = imp[key_of[title]]
+        tbl = pd.DataFrame({
+            title: [lab for lab, _, _ in items],
+            "Rigid": [fmt(sec["rigid"][k]) for _, k, fmt in items],
+            "Flexible": [fmt(sec["flexible"][k]) for _, k, fmt in items],
+        })
+        with cols[i % 2]:
+            st.subheader(title)
+            st.dataframe(tbl, hide_index=True, use_container_width=True)
+    st.caption(f"Net CO2 change (flexible minus rigid): {imp['headline']['net_co2_change_t']:+,.0f} t.")
     built_design_note()
-    with st.expander("Business case"):
-        st.write("Flexing pays when its cost is below the value of getting power sooner. Deal pricing is next.")
+    st.success("Business case: flexing costs less than waiting years for power. Pricing that deal is the next step.")
 
 
 with t5:
