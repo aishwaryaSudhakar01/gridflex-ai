@@ -1,0 +1,17 @@
+{
+  "planning_peak_mw": 82977.68,
+  "tau": 0.05271876174243095,
+  "recall": 1.0,
+  "precision": 0.16666666666666666,
+  "mape_model": 2.412308010561607,
+  "mape_ba": 2.1609170873862373,
+  "mape_naive": 5.61839311834052,
+  "mape_top5_model": 1.8395687731028545,
+  "mape_top5_ba": 1.67027371756385,
+  "mape_top5_naive": 2.568781156570666,
+  "cp4_days_caught": 3,
+  "cp4_days_total": 4,
+  "n_stress_hours_test": 31,
+  "n_stress_hours_tune": 67,
+  "mape_week_model": 7.086751117961228
+}
