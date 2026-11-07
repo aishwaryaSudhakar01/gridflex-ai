@@ -39,7 +39,7 @@ CITIES = {  # name: (lat, lon, weight)
 }
 
 # Pre-decided rule, no debate (CONTEXT.md section 6.4). Builder A sets it at 1:45 PM if needed.
-PLANNING_MARGIN = 1.00   # P = PLANNING_MARGIN * max load 2022-2024. Allowed values: 1.00 or 0.97.
+PLANNING_MARGIN = 0.97   # P = PLANNING_MARGIN * max load 2022-2024. Allowed values: 1.00 or 0.97.
 
 # ---------------------------------------------------------------- sidebar defaults (spec: Data center setup + Cost)
 DEFAULTS = {
