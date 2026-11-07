@@ -1,0 +1,6 @@
+source,mw,cost_per_mwh,energy_limit_mwh
+batch,360.0,0.0,3199.999999999999
+battery,100.0,24.444444444444446,400.0
+backup,150.0,150.0,inf
+training,600.0,833.3333333333334,inf
+realtime,0.0,inf,0.0

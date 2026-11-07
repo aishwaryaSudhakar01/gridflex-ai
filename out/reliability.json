@@ -1,0 +1,19 @@
+{
+  "k_rel_mw": 1176.6666666666667,
+  "k_ask_mw": 1200.0,
+  "promise_mw": 100.0,
+  "promise_holds": true,
+  "k_rel_covers_ask": false,
+  "share_events_full_tune": 1.0,
+  "share_events_full_test": 1.0,
+  "n_events_tune": 14,
+  "n_events_test": 10,
+  "max_facility_mw_holding": 1000.0,
+  "mw_by_source": {
+    "batch": 349.87085714285746,
+    "battery": 83.69980952380963,
+    "backup": 134.08652380952444,
+    "training": 456.80823809524003,
+    "realtime": 0.0
+  }
+}
