@@ -12,11 +12,57 @@ Rules that keep integration safe:
 """
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 from src import contracts as c
 from src import grid_capacity, scheduler, flex_supply, impact, live, week_plan
 
-st.set_page_config(page_title="GridFlex AI", layout="wide")
+st.set_page_config(page_title="GridFlex AI", page_icon="⚡", layout="wide")
+
+# ---------------------------------------------------------------- look and feel (colours from the mockup)
+COLORS = {"realtime": "#F5F7FA", "batch": "#FFD60A", "training": "#7C8BA1", "battery": "#38BDF8",
+          "backup": "#FF8A3D", "limit": "#FF5A4E", "ink": "#E8ECF2", "ok": "#4ADE80"}
+pio.templates["gridflex"] = go.layout.Template(layout=dict(
+    font=dict(family="Inter, -apple-system, Segoe UI, sans-serif", color=COLORS["ink"], size=13),
+    colorway=["#FFD60A", "#F5F7FA", "#38BDF8", "#FF8A3D", "#FF5A4E", "#7C8BA1", "#4ADE80"],
+    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    title=dict(font=dict(size=16, color=COLORS["ink"]), x=0, xanchor="left"),
+    xaxis=dict(gridcolor="#1E2633", zeroline=False, linecolor="#2A3443"),
+    yaxis=dict(gridcolor="#1E2633", zeroline=False, linecolor="#2A3443"),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
+    hoverlabel=dict(bgcolor="#0F141C", bordercolor="#FFD60A", font_size=12, font_color="#F5F7FA"), margin=dict(l=10, r=10, t=50, b=10)))
+pio.templates.default = "plotly_dark+gridflex"
+
+st.markdown("""
+<style>
+.stApp {background: radial-gradient(1100px 480px at 85% -10%, rgba(255,214,10,.09), transparent 60%), #07090D;}
+.block-container {padding-top: 2rem; max-width: 1400px;}
+.gf-hero {background: linear-gradient(120deg, #0B0F16 0%, #121924 60%, #1A1A0E 100%); color: #fff;
+          border: 1px solid rgba(255,214,10,.35); border-radius: 18px; padding: 26px 32px; margin-bottom: 18px;
+          box-shadow: 0 0 0 1px rgba(255,214,10,.08), 0 14px 40px -16px rgba(255,214,10,.35);}
+.gf-hero h1 {color: #fff; font-size: 2.4rem; margin: 0 0 6px 0; padding: 0; letter-spacing: -0.5px;
+          display: flex; align-items: center; gap: 10px;}
+.gf-hero h1 svg {filter: drop-shadow(0 0 8px rgba(255,214,10,.7));}
+.gf-hero p {color: #AEB8C6; font-size: 1.02rem; margin: 0; max-width: 900px; line-height: 1.5;}
+.gf-pill {display: inline-block; background: rgba(255,214,10,.10); border: 1px solid rgba(255,214,10,.35);
+          border-radius: 999px; padding: 3px 12px; font-size: .78rem; margin: 0 6px 12px 0; color: #FFD60A;}
+div[data-testid="stMetric"] {background: #0F141C; border: 1px solid #1E2633; border-radius: 14px; padding: 14px 16px;}
+div[data-testid="stMetricValue"] {font-weight: 700; color: #FFFFFF;}
+div[data-testid="stMetricLabel"] p {color: #8C97A8; font-size: .85rem;}
+.stTabs [data-baseweb="tab-list"] {gap: 6px; border-bottom: 1px solid #1E2633;}
+.stTabs [data-baseweb="tab"] {background: #0F141C; border-radius: 10px 10px 0 0; padding: 8px 16px; font-weight: 600;
+          color: #AEB8C6;}
+.stTabs [aria-selected="true"] {background: #FFD60A; color: #0A0D12 !important;}
+.stTabs [data-baseweb="tab-highlight"] {background: transparent;}
+div[data-testid="stPlotlyChart"] {background: #0F141C; border: 1px solid #1E2633; border-radius: 14px; padding: 8px;}
+section[data-testid="stSidebar"] {background: #0A0D12; border-right: 1px solid #141A23;}
+section[data-testid="stSidebar"] h2 {font-size: 1.05rem; color: #FFFFFF; border-bottom: 2px solid #FFD60A;
+          padding-bottom: 4px;}
+section[data-testid="stSidebar"] div[data-testid="stExpander"] details {background: #0F141C; border: 1px solid #1E2633;
+          border-radius: 12px;}
+footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------- safety net + loaders
@@ -128,6 +174,7 @@ for k, v in c.DEFAULTS.items():
     st.session_state.setdefault(k, v)
 
 with st.sidebar:
+    st.markdown("### ⚡ GridFlex controls")
     st.header("Data center")
     st.selectbox("Region", ["ERCOT (Texas)"], disabled=True)
     for k in ["it_mw", "pue", "share_realtime", "share_batch", "battery_mw", "battery_h", "backup_mw"]:
@@ -153,9 +200,15 @@ if err:
 P_ITEMS = tuple(sorted(p.items()))
 
 # ---------------------------------------------------------------- header
-st.title("GridFlex AI")
-st.caption("The grid isn't full. It's full for a few dozen hours a year. We forecast those hours, schedule an AI "
-           "data center through them, and measure what that does for the grid, the data center and emissions.")
+st.markdown("""
+<div class="gf-hero">
+  <span class="gf-pill">ERCOT · Texas</span><span class="gf-pill">Real EIA-930 data</span>
+  <span class="gf-pill">Vibathon 2026 · Time to power</span>
+  <h1><svg width="30" height="30" viewBox="0 0 24 24" fill="#FFD60A" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"></path></svg>GridFlex AI</h1>
+  <p>The grid isn't full. It's full for a few dozen hours a year. We forecast those hours, schedule an AI data
+  center through them, and measure what that does for the grid, the data center and emissions.</p>
+</div>
+""", unsafe_allow_html=True)
 not_built = [n for n in c.SCHEMAS if not c.ready(n)]
 if not_built:
     st.warning("Still being built: " + ", ".join(not_built))
@@ -174,8 +227,8 @@ def headline():
 
 
 section(headline)
-t0, t1, t2, t3, t4, t5 = st.tabs(["Plan the week", "The grid", "The forecast", "The operation", "The design",
-                                  "The impact"])
+t0, t1, t2, t3, t4, t5 = st.tabs(["📅 Plan the week", "🔌 The grid", "📈 The forecast", "⚙️ The operation",
+                                  "🧩 The design", "🌎 The impact"])
 
 
 # ---------------------------------------------------------------- Tab 0: Plan the week
@@ -247,15 +300,15 @@ def plan_the_week():
     fig.add_scatter(x=wp.local_ts, y=wp.load_ercot_mw, name="ERCOT forecast", line=dict(dash="dot"))
     fig.add_hline(y=line, line_dash="dash", line_color="red", annotation_text="Cut starts here")
     if not sel.empty:
-        fig.add_vline(x=sel.local_ts.iloc[0], line_color="black", opacity=0.4)
+        fig.add_vline(x=sel.local_ts.iloc[0], line_color="white", opacity=0.5)
     fig.update_layout(title="Load forecast for the week", height=300, margin=dict(t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("Our model vs ERCOT's. Above the red line, the data center must cut. Black line: your selected hour.")
+    st.caption("Our model vs ERCOT's. Above the red line, the data center must cut. White line: your selected hour.")
     fig = go.Figure()
-    for col, name in [("cut_batch_mw", "Batch paused"), ("cut_battery_mw", "Battery"), ("cut_backup_mw", "Backup"),
-                      ("cut_training_mw", "Training slowed")]:
-        fig.add_bar(x=wp.local_ts, y=wp[col], name=name)
-    fig.add_scatter(x=wp.local_ts, y=wp.planned_cut_mw, name="Cut needed", line=dict(color="red"))
+    for col, name, colr in [("cut_batch_mw", "Batch paused", "batch"), ("cut_battery_mw", "Battery", "battery"),
+                            ("cut_backup_mw", "Backup", "backup"), ("cut_training_mw", "Training slowed", "training")]:
+        fig.add_bar(x=wp.local_ts, y=wp[col], name=name, marker_color=COLORS[colr])
+    fig.add_scatter(x=wp.local_ts, y=wp.planned_cut_mw, name="Cut needed", line=dict(color=COLORS["limit"]))
     fig.update_layout(barmode="stack", title="Where each MW of cut comes from, hour by hour", height=280,
                       margin=dict(t=40, b=10))
     st.plotly_chart(fig, use_container_width=True)
@@ -353,11 +406,13 @@ def tab_operation():
     peak_ts = flex.loc[flex.load_mw.idxmax(), "ts_utc"]
     week = live_week(P_ITEMS, (peak_ts - pd.Timedelta(days=3)).floor("D"))
     fig = go.Figure()
-    for col, name in [("realtime_mw", "Real-time inference"), ("batch_mw", "Batch"), ("training_mw", "Training")]:
-        fig.add_bar(x=local(week.ts_utc), y=week[col] * p["pue"], name=name)
-    fig.add_bar(x=local(week.ts_utc), y=-week.batt_mw, name="Battery (charge +, discharge -)")
-    fig.add_bar(x=local(week.ts_utc), y=-week.backup_mw, name="Backup")
-    fig.add_scatter(x=local(week.ts_utc), y=week.dc_draw_mw, name="Grid draw", line=dict(color="black"))
+    for col, name, colr in [("realtime_mw", "Real-time inference", "realtime"), ("batch_mw", "Batch", "batch"),
+                            ("training_mw", "Training", "training")]:
+        fig.add_bar(x=local(week.ts_utc), y=week[col] * p["pue"], name=name, marker_color=COLORS[colr])
+    fig.add_bar(x=local(week.ts_utc), y=-week.batt_mw, name="Battery (charge +, discharge -)",
+                marker_color=COLORS["battery"])
+    fig.add_bar(x=local(week.ts_utc), y=-week.backup_mw, name="Backup", marker_color=COLORS["backup"])
+    fig.add_scatter(x=local(week.ts_utc), y=week.dc_draw_mw, name="Grid draw", line=dict(color="white"))
     wl = live_week_limit(P_ITEMS, week.ts_utc.min(), week.ts_utc.max())
     if wl is not None:
         fig.add_scatter(x=local(wl.ts_utc), y=wl.limit_mw, name="Grid limit", line=dict(color="red", dash="dash"))
